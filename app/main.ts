@@ -18,7 +18,7 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         connection.write("+PONG\r\n");
         break;
       case "ECHO":
-        connection.write(`*${arr[4].length}\r\n$${data.toString().split("\r\n")[4]}\r\n`);
+        connection.write(`$${arr[4].length}\r\n${data.toString().split("\r\n")[4]}\r\n`);
         break;
       default:
         connection.write("-ERR unknown command\r\n");
