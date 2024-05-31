@@ -29,7 +29,7 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         console.log(key,value)
         connection.write("+OK\r\n");
         collection[key]=value;
-        if(px&&px==="PX"){
+        if(px&&px.toLowerCase()==="px"){
           expire_time=parseInt(time);
           setTimeout(()=>{
             delete collection[key];
