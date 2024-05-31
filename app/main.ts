@@ -1,9 +1,11 @@
+import exp from "constants";
 import { connect } from "http2";
 import * as net from "net";
 
 // You can use print statements as follows for debugging, they'll be visible when running tests.
 console.log("Logs from your program will appear here!");
 const collection:{[key:string]:string}={};
+let expire_time;
 // Uncomment this block to pass the first stage
 const server: net.Server = net.createServer((connection: net.Socket) => {
   // Handle connection
@@ -11,24 +13,33 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
     const arr=data.toString().split("\r\n");
     console.log("Data received: ",arr);
     
-    const method = arr[2]; // Convert method to a string
-    
+    const method = arr[2]; 
+    const key = arr[4];
+    const value = arr[6];
+    const px = arr[8];
+    const time=arr[10];
     switch(method){
         case "PING":
           connection.write("+PONG\r\n");
           break;
       case "ECHO":
-        connection.write(`$${arr[4].length}\r\n${arr[4]}\r\n`);
+        connection.write(`$${key.length}\r\n${key}\r\n`);
         break;
       case "SET":
-        console.log(arr[4],arr[6])
+        console.log(key,value)
         connection.write("+OK\r\n");
-        collection[arr[4]]=arr[6];
+        collection[key]=value;
+        if(px&&px==="PX"){
+          expire_time=parseInt(time);
+          setTimeout(()=>{
+            delete collection[key];
+          },expire_time)
+        }
         break;
       case "GET":
         console.log(collection)
-        if(collection[arr[4]]){
-          connection.write(`$${collection[arr[4]].length}\r\n${collection[arr[4]]}\r\n`);
+        if(collection[key]){
+          connection.write(`$${collection[key].length}\r\n${collection[key]}\r\n`);
         }
         else{
           connection.write(`$-1\r\n`)
