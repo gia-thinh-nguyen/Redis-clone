@@ -2,7 +2,7 @@ import exp from "constants";
 import { connect } from "http2";
 import * as net from "net";
 import {argv} from "node:process";
-console.log(argv)
+
 // You can use print statements as follows for debugging, they'll be visible when running tests.
 console.log("Logs from your program will appear here!");
 const collection:{[key:string]:string}={};
@@ -48,6 +48,13 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
           connection.write(`$-1\r\n`)
         }
         break;
+      case "INFO":
+        if(PORT===6379){
+          connection.write(`$11\r\nrole:master\r\n`)
+        }
+        else{
+          connection.write(`$10\r\nrole:slave\r\n`)
+        }
       default:
         connection.write("-ERR unknown command\r\n");
 
