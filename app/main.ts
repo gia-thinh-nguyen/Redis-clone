@@ -5,6 +5,7 @@ import {argv} from "node:process";
 
 // You can use print statements as follows for debugging, they'll be visible when running tests.
 console.log("Logs from your program will appear here!");
+console.log(argv)
 const collection:{[key:string]:string}={};
 let expire_time;
 let PORT=parseInt(argv[3])||6379;
@@ -40,7 +41,6 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         }
         break;
       case "GET":
-        console.log(collection)
         if(collection[key]){
           connection.write(`$${collection[key].length}\r\n${collection[key]}\r\n`);
         }
@@ -49,14 +49,9 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         }
         break;
       case "INFO":
-        if(argv.includes("--replicaof")){
-          const string=`role:slave\r\nmaster_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb\r\nmaster_repl_offset:0\r\n`
+        const role=argv.includes("--replicaof")?"slave":"master"
+        const string=`role:${role}\r\nmaster_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb\r\nmaster_repl_offset:0\r\n`
           connection.write(`$${string.length}\r\n${string}\r\n`);
-        }
-        else{
-          const string=`role:master\r\nmaster_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb\r\nmaster_repl_offset:0\r\n`
-          connection.write(`$${string.length}\r\n${string}\r\n`);
-        }
       default:
         connection.write("-ERR unknown command\r\n");
 
@@ -64,5 +59,15 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
     }
   })
 });
+if(argv.includes("--replicaof")){
+  const slavePort=argv[argv.indexOf("--port")+1];
+  const [masterHost,masterPortString]=argv[argv.indexOf("--replicaof")+1].split(" ");
+  const masterPort=parseInt(masterPortString);
+  const handshake = net.connect({host: masterHost, port: masterPort}, () => {
+    handshake.write("*1\r\n$4\r\nPING\r\n");
+  });
+  
+
+}
 //
 server.listen(PORT, "127.0.0.1");
