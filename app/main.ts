@@ -49,11 +49,13 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         }
         break;
       case "INFO":
-        if(PORT===6379){
-          connection.write(`$11\r\nrole:master\r\n`)
+        if(argv.includes("--replicaof")){
+          const string=`role:slave\r\nmaster_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb\r\nmaster_repl_offset:0\r\n`
+          connection.write(`$${string.length}\r\n${string}\r\n`);
         }
         else{
-          connection.write(`$10\r\nrole:slave\r\n`)
+          const string=`role:master\r\nmaster_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb\r\nmaster_repl_offset:0\r\n`
+          connection.write(`$${string.length}\r\n${string}\r\n`);
         }
       default:
         connection.write("-ERR unknown command\r\n");
