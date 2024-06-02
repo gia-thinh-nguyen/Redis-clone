@@ -9,6 +9,7 @@ console.log(argv)
 const collection:{[key:string]:string}={};
 let expire_time;
 let PORT=parseInt(argv[3])||6379;
+const master_replid="8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb";
 // Uncomment this block to pass the first stage
 const server: net.Server = net.createServer((connection: net.Socket) => {
   
@@ -49,11 +50,14 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         break;
       case "INFO":
         const role=argv.includes("--replicaof")?"slave":"master"
-        const string=`role:${role}\r\nmaster_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb\r\nmaster_repl_offset:0\r\n`
+        const string=`role:${role}\r\nmaster_replid:${master_replid}\r\nmaster_repl_offset:0\r\n`
           connection.write(`$${string.length}\r\n${string}\r\n`);
           break;
       case "REPLCONF":
         connection.write("+OK\r\n")
+        break;
+      case "PSYNC":
+        connection.write(`+FULLRESYNC ${master_replid} 0\r\n`)
         break;
       default:
         connection.write("-ERR unknown command\r\n");
