@@ -73,6 +73,11 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         propagatedCommands.push(connection)
         offset = 0;
         break;
+      case "WAIT":
+        if(propagatedCommands.length===0){
+          connection.write(`:${key}\r\n`)
+        }
+        break;
       default:
         connection.write("-ERR unknown command\r\n");
 
@@ -101,7 +106,6 @@ if(argv.includes("--replicaof")){
     await handleHandshake(repSocket!,"+OK",`*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n`);
     await handleHandshake(repSocket!,"+OK",`*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n`);
     repSocket!.on("data",(data)=>{
-      
       if (record) offset+=Buffer.byteLength(data);
       const arr=data.toString().split("\r\n");
       const commands=arr.slice(2);
