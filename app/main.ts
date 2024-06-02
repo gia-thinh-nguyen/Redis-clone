@@ -11,6 +11,8 @@ let expire_time;
 let PORT=parseInt(argv[3])||6379;
 let propagatedCommands:net.Socket[]=[]
 let repSocket:net.Socket|null=null;
+let offset=0;
+let record=false;
 const master_replid="8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb";
 // Uncomment this block to pass the first stage
 const server: net.Server = net.createServer((connection: net.Socket) => {
@@ -69,7 +71,7 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         connection.write(`$${bufferFrom64.length}\r\n`)
         connection.write(bufferFrom64)
         propagatedCommands.push(connection)
-    
+        offset = 0;
         break;
       default:
         connection.write("-ERR unknown command\r\n");
@@ -99,6 +101,8 @@ if(argv.includes("--replicaof")){
     await handleHandshake(repSocket!,"+OK",`*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n`);
     await handleHandshake(repSocket!,"+OK",`*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n`);
     repSocket!.on("data",(data)=>{
+      
+      if (record) offset+=Buffer.byteLength(data);
       const arr=data.toString().split("\r\n");
       const commands=arr.slice(2);
       console.log(arr)
@@ -107,7 +111,8 @@ if(argv.includes("--replicaof")){
           collection[commands[i+2]]=commands[i+4];
         }
         if(commands[i]==="GETACK"){
-          repSocket!.write(`*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$1\r\n0\r\n`)
+          repSocket!.write(`*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$${offset.toString().length}\r\n${offset}\r\n`)
+          record=true;
         }
       }
     })
