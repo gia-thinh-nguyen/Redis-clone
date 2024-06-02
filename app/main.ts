@@ -58,6 +58,11 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         break;
       case "PSYNC":
         connection.write(`+FULLRESYNC ${master_replid} 0\r\n`)
+        const base64="UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog==";
+        const bufferFrom64=Buffer.from(base64,'base64');
+        connection.write(`$${bufferFrom64.length}\r\n`)
+        connection.write(bufferFrom64)
+    
         break;
       default:
         connection.write("-ERR unknown command\r\n");
