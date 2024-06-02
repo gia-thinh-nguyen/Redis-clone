@@ -98,12 +98,16 @@ if(argv.includes("--replicaof")){
     await handleHandshake(repSocket!,"+PONG",`*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n${slavePort}\r\n`);
     await handleHandshake(repSocket!,"+OK",`*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n`);
     await handleHandshake(repSocket!,"+OK",`*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n`);
-    repSocket?.on("data",(data)=>{
+    repSocket!.on("data",(data)=>{
       const arr=data.toString().split("\r\n");
       const commands=arr.slice(2);
+      console.log(arr)
       for(let i=0;i<commands.length;i++){
         if(commands[i]==="SET"){
           collection[commands[i+2]]=commands[i+4];
+        }
+        if(commands[i]==="GETACK"){
+          repSocket!.write(`*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$1\r\n0\r\n`)
         }
       }
     })
