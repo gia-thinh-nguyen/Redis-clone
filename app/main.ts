@@ -9,6 +9,8 @@ console.log(argv)
 const collection:{[key:string]:string}={};
 let expire_time;
 let PORT=parseInt(argv[3])||6379;
+let repSockets:net.Socket[]=[]
+let repSocket:net.Socket|null=null;
 const master_replid="8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb";
 // Uncomment this block to pass the first stage
 const server: net.Server = net.createServer((connection: net.Socket) => {
@@ -39,6 +41,13 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
             delete collection[key];
           },expire_time)
         }
+     
+          repSockets.forEach(connection => {
+            const keyBytes = Buffer.byteLength(key, 'utf8');
+            const valueBytes = Buffer.byteLength(value, 'utf8');
+            connection.write(`*3\r\n$3\r\nSET\r\n$${keyBytes}\r\n${key}\r\n$${valueBytes}\r\n${value}\r\n`);
+          });
+        
         break;
       case "GET":
         if(collection[key]){
@@ -62,6 +71,7 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         const bufferFrom64=Buffer.from(base64,'base64');
         connection.write(`$${bufferFrom64.length}\r\n`)
         connection.write(bufferFrom64)
+        repSockets.push(connection)
     
         break;
       default:
@@ -71,11 +81,11 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
     }
   })
 });
-const handleHandshake= async(handshake:net.Socket,expectedResponse:string,command:string)=>{
+const handleHandshake= async(repSocket:net.Socket,expectedResponse:string,command:string)=>{
   return new Promise<void>((resolve)=>{
-    handshake.once("data",(data)=>{
+    repSocket.once("data",(data)=>{
       if(data.toString().trim()===expectedResponse){
-        handshake.write(command);
+        repSocket.write(command);
         resolve();
       }
     })
@@ -86,11 +96,12 @@ if(argv.includes("--replicaof")){
   const slavePort=argv[argv.indexOf("--port")+1];
   const [masterHost,masterPortString]=argv[argv.indexOf("--replicaof")+1].split(" ");
   const masterPort=parseInt(masterPortString);
-  const handshake = net.connect({host: masterHost, port: masterPort},async () => {
-    handshake.write("*1\r\n$4\r\nPING\r\n");
-    await handleHandshake(handshake,"+PONG",`*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n${slavePort}\r\n`);
-    await handleHandshake(handshake,"+OK",`*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n`);
-    await handleHandshake(handshake,"+OK",`*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n`);
+  repSocket = net.connect({host: masterHost, port: masterPort},async () => {
+    repSocket!.write("*1\r\n$4\r\nPING\r\n");
+    await handleHandshake(repSocket!,"+PONG",`*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n${slavePort}\r\n`);
+    await handleHandshake(repSocket!,"+OK",`*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n`);
+    await handleHandshake(repSocket!,"+OK",`*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n`);
+
   });
   
 
