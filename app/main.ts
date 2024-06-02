@@ -75,7 +75,10 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         break;
       case "WAIT":
         if(propagatedCommands.length===0){
-          connection.write(`:${key}\r\n`)
+          connection.write(`:${propagatedCommands.length}\r\n`)
+        }
+        else{
+          connection.write(`:${propagatedCommands.length}\r\n`)
         }
         break;
       default:
