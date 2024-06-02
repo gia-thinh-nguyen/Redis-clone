@@ -30,7 +30,6 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         connection.write(`$${key.length}\r\n${key}\r\n`);
         break;
       case "SET":
-        console.log(key,value)
         connection.write("+OK\r\n");
         collection[key]=value;
         if(px&&px.toLowerCase()==="px"){
@@ -52,6 +51,10 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         const role=argv.includes("--replicaof")?"slave":"master"
         const string=`role:${role}\r\nmaster_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb\r\nmaster_repl_offset:0\r\n`
           connection.write(`$${string.length}\r\n${string}\r\n`);
+          break;
+      case "REPLCONF":
+        connection.write("+OK\r\n")
+        break;
       default:
         connection.write("-ERR unknown command\r\n");
 
@@ -70,12 +73,8 @@ const handleHandshake= async(handshake:net.Socket,expectedResponse:string,comman
   })
 }
 
-
-
 if(argv.includes("--replicaof")){
   const slavePort=argv[argv.indexOf("--port")+1];
-  console.log(slavePort)
-  console.log(argv.indexOf("--port"))
   const [masterHost,masterPortString]=argv[argv.indexOf("--replicaof")+1].split(" ");
   const masterPort=parseInt(masterPortString);
   const handshake = net.connect({host: masterHost, port: masterPort},async () => {
