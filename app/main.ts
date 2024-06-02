@@ -9,7 +9,7 @@ console.log(argv)
 const collection:{[key:string]:string}={};
 let expire_time;
 let PORT=parseInt(argv[3])||6379;
-let repSockets:net.Socket[]=[]
+let propagatedCommands:net.Socket[]=[]
 let repSocket:net.Socket|null=null;
 const master_replid="8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb";
 // Uncomment this block to pass the first stage
@@ -41,12 +41,9 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
             delete collection[key];
           },expire_time)
         }
-     
-          repSockets.forEach(connection => {
-            const keyBytes = Buffer.byteLength(key, 'utf8');
-            const valueBytes = Buffer.byteLength(value, 'utf8');
-            connection.write(`*3\r\n$3\r\nSET\r\n$${keyBytes}\r\n${key}\r\n$${valueBytes}\r\n${value}\r\n`);
-          });
+        propagatedCommands.forEach(connection => {
+          connection.write(`*3\r\n$3\r\nSET\r\n$${key.length}\r\n${key}\r\n$${value.length}\r\n${value}\r\n`);
+        });
         
         break;
       case "GET":
@@ -71,7 +68,7 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         const bufferFrom64=Buffer.from(base64,'base64');
         connection.write(`$${bufferFrom64.length}\r\n`)
         connection.write(bufferFrom64)
-        repSockets.push(connection)
+        propagatedCommands.push(connection)
     
         break;
       default:
