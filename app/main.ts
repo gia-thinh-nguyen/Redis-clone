@@ -10,9 +10,10 @@ const collection:{[key:string]:string}={};
 let expire_time;
 let PORT=parseInt(argv[3])||6379;
 let propagatedCommands:net.Socket[]=[]
-let repSocket:net.Socket|null=null;
 let offset=0;
 let record=false;
+let ackRep=0;
+let pendingCommands=0;
 const master_replid="8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb";
 // Uncomment this block to pass the first stage
 const server: net.Server = net.createServer((connection: net.Socket) => {
@@ -43,8 +44,10 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
             delete collection[key];
           },expire_time)
         }
+        pendingCommands++;
         propagatedCommands.forEach(connection => {
-          connection.write(`*3\r\n$3\r\nSET\r\n$${key.length}\r\n${key}\r\n$${value.length}\r\n${value}\r\n`);
+          console.log(collection)
+          connection.write(`*3\r\n$3\r\nSET\r\n$${key.length}\r\n${key}\r\n$${value.length}\r\n${value}\r\n`)
         });
         
         break;
@@ -62,7 +65,8 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
           connection.write(`$${string.length}\r\n${string}\r\n`);
           break;
       case "REPLCONF":
-        connection.write("+OK\r\n")
+        if(arr[4]!="ACK") connection.write("+OK\r\n")
+        if(arr[4]==="ACK") {ackRep++}
         break;
       case "PSYNC":
         connection.write(`+FULLRESYNC ${master_replid} 0\r\n`)
@@ -74,12 +78,21 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         offset = 0;
         break;
       case "WAIT":
-        if(propagatedCommands.length===0){
-          connection.write(`:${propagatedCommands.length}\r\n`)
-        }
-        else{
-          connection.write(`:${propagatedCommands.length}\r\n`)
-        }
+          if(pendingCommands===0) connection.write(`:${propagatedCommands.length}\r\n`);
+          const expectedAckReps=parseInt(arr[4]);
+          let timeout=parseInt(arr[6]);
+          const waitInterval=setInterval(()=>{
+            console.log(ackRep,expectedAckReps)
+            if(ackRep>=expectedAckReps||timeout<=0){
+              connection.write(`:${ackRep}\r\n`);
+              clearInterval(waitInterval);
+              ackRep=0
+            }
+            timeout-=100;
+          },100)
+          propagatedCommands.forEach(connection => {
+            connection.write(`*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n`);
+          });
         break;
       default:
         connection.write("-ERR unknown command\r\n");
@@ -103,28 +116,27 @@ if(argv.includes("--replicaof")){
   const slavePort=argv[argv.indexOf("--port")+1];
   const [masterHost,masterPortString]=argv[argv.indexOf("--replicaof")+1].split(" ");
   const masterPort=parseInt(masterPortString);
-  repSocket = net.connect({host: masterHost, port: masterPort},async () => {
-    repSocket!.write("*1\r\n$4\r\nPING\r\n");
-    await handleHandshake(repSocket!,"+PONG",`*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n${slavePort}\r\n`);
-    await handleHandshake(repSocket!,"+OK",`*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n`);
-    await handleHandshake(repSocket!,"+OK",`*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n`);
-    repSocket!.on("data",(data)=>{
+  const repSocket = net.connect({host: masterHost, port: masterPort},async () => {
+    repSocket.write("*1\r\n$4\r\nPING\r\n");
+    await handleHandshake(repSocket,"+PONG",`*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n${slavePort}\r\n`);
+    await handleHandshake(repSocket,"+OK",`*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n`);
+    await handleHandshake(repSocket,"+OK",`*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n`);
+    repSocket.on("data",(data)=>{
       if (record) offset+=Buffer.byteLength(data);
       const arr=data.toString().split("\r\n");
       const commands=arr.slice(2);
-      console.log(arr)
       for(let i=0;i<commands.length;i++){
         if(commands[i]==="SET"){
           collection[commands[i+2]]=commands[i+4];
+          pendingCommands--;
         }
         if(commands[i]==="GETACK"){
-          repSocket!.write(`*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$${offset.toString().length}\r\n${offset}\r\n`)
+          repSocket.write(`*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$${offset.toString().length}\r\n${offset}\r\n`)
           record=true;
         }
       }
     })
   });
-  
 
 }
 //
