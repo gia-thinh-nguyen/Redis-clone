@@ -65,8 +65,8 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
           connection.write(`$${string.length}\r\n${string}\r\n`);
           break;
       case "REPLCONF":
-        if(arr[4]!="ACK") connection.write("+OK\r\n")
         if(arr[4]==="ACK") {ackRep++}
+        else{connection.write("+OK\r\n")}
         break;
       case "PSYNC":
         connection.write(`+FULLRESYNC ${master_replid} 0\r\n`)
