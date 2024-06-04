@@ -2,11 +2,24 @@ import exp from "constants";
 import { connect } from "http2";
 import * as net from "net";
 import {argv} from "node:process";
-import { simpleString,bulkString,arrays,nullBulkString,integer,parseBuffer,unknownCommand,handleHandshake,base64RDB,doubleDash } from "./helper";
+import { simpleString,bulkString,arrays,nullBulkString,integer,parseBuffer,unknownCommand,handleHandshake,base64RDB,doubleDash} from "./helper";
+import {config} from "./types";
+import {loadRDB} from "./rdbLoader";
+
 // You can use print statements as follows for debugging, they'll be visible when running tests.
 console.log("Logs from your program will appear here!");
 console.log(argv)
-const collection:{[key:string]:string}={};
+
+
+const configStore:config={dir:"",dbfilename:""};
+if(argv.includes("--dir")){
+  configStore.dir=doubleDash(argv,"--dir");
+}
+if(argv.includes("--dbfilename")){
+  configStore.dbfilename=doubleDash(argv,"--dbfilename");
+}
+
+const redisStore=loadRDB(configStore)
 let expire_time;
 let PORT=parseInt(argv[3])||6379;
 let propagatedCommands:net.Socket[]=[]
@@ -39,11 +52,11 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         break;
       case "SET":
         simpleString(connection,"OK");
-        collection[key]=value;
+        redisStore[key]={value:value};
         if(px&&px.toLowerCase()==="px"){
           expire_time=parseInt(time);
           setTimeout(()=>{
-            delete collection[key];
+            delete redisStore[key];
           },expire_time)
         }
         pendingCommands++;
@@ -53,8 +66,8 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         
         break;
       case "GET":
-        if(collection[key]){
-          bulkString(connection,collection[key]);
+        if(redisStore[key]){
+          bulkString(connection,redisStore[key].value);
         }
         else{
           nullBulkString(connection);
@@ -92,9 +105,19 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
           });
         break;
       case "CONFIG":
-        console.log(collection)
-        if(arr[6]==="dir"){arrays(connection,["dir",collection["dir"]])}
-        if(arr[6]==="dbfilename"){arrays(connection,["dbfilename",collection["dbfilename"]])}
+        switch(arr[6]){
+          case "dir":
+            arrays(connection,["dir",configStore.dir])
+            break;
+          case "dbfilename":
+            arrays(connection,["dbfilename",configStore.dbfilename])
+            break;
+          default:
+            unknownCommand(connection);
+        }
+        break;
+      case "KEYS":
+        arrays(connection,Object.keys(redisStore));
         break;
       default:
         unknownCommand(connection);
@@ -118,7 +141,7 @@ if(argv.includes("--replicaof")){
       const commands=arr.slice(2); //skip rdb file
       for(let i=0;i<commands.length;i++){
         if(commands[i]==="SET"){
-          collection[commands[i+2]]=commands[i+4];
+          redisStore[commands[i+2]]={value:commands[i+4]};
           
         }
         if(commands[i]==="GETACK"){
@@ -130,11 +153,7 @@ if(argv.includes("--replicaof")){
   });
 
 }
-if(argv.includes("--dir")){
-  collection["dir"]=doubleDash(argv,"--dir");
-}
-if(argv.includes("--dbfilename")){
-  collection["dbfilename"]=doubleDash(argv,"--dbfilename");
-}
+
+
 
 server.listen(PORT, "127.0.0.1");

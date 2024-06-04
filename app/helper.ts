@@ -28,3 +28,7 @@ export const base64RDB=(connection:net.Socket,base64:string)=>{
 export const doubleDash=(argv:string[],doubleDash:string):string=>{
     return argv[argv.indexOf(doubleDash)+1];
 }
+
+export const bytesToString=(arr:Uint8Array):string=>{
+  return Array.from(arr).map((byte)=>String.fromCharCode(byte)).join('');
+}
