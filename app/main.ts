@@ -2,7 +2,7 @@ import exp from "constants";
 import { connect } from "http2";
 import * as net from "net";
 import {argv} from "node:process";
-
+import { simpleString,bulkString,arrays,nullBulkString,integer,parseBuffer,unknownCommand,handleHandshake,base64RDB,doubleDash } from "./helper";
 // You can use print statements as follows for debugging, they'll be visible when running tests.
 console.log("Logs from your program will appear here!");
 console.log(argv)
@@ -15,12 +15,14 @@ let record=false;
 let ackRep=0;
 let pendingCommands=0;
 const master_replid="8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb";
+const base64="UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog==";
+
 // Uncomment this block to pass the first stage
 const server: net.Server = net.createServer((connection: net.Socket) => {
   
   // Handle connection
   connection.on("data", (data:Buffer)=>{
-    const arr=data.toString().split("\r\n");
+    const arr=parseBuffer(data);
     console.log("Data received: ",arr);
     
     const method = arr[2]; 
@@ -29,14 +31,14 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
     const px = arr[8];
     const time=arr[10];
     switch(method){
-        case "PING":
-          connection.write("+PONG\r\n");
+      case "PING":
+          simpleString(connection,"PONG");
           break;
       case "ECHO":
-        connection.write(`$${key.length}\r\n${key}\r\n`);
+        bulkString(connection,key);
         break;
       case "SET":
-        connection.write("+OK\r\n");
+        simpleString(connection,"OK");
         collection[key]=value;
         if(px&&px.toLowerCase()==="px"){
           expire_time=parseInt(time);
@@ -46,92 +48,81 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         }
         pendingCommands++;
         propagatedCommands.forEach(connection => {
-          console.log(collection)
-          connection.write(`*3\r\n$3\r\nSET\r\n$${key.length}\r\n${key}\r\n$${value.length}\r\n${value}\r\n`)
+          arrays(connection,["SET",key,value]);
         });
         
         break;
       case "GET":
         if(collection[key]){
-          connection.write(`$${collection[key].length}\r\n${collection[key]}\r\n`);
+          bulkString(connection,collection[key]);
         }
         else{
-          connection.write(`$-1\r\n`)
+          nullBulkString(connection);
         }
         break;
       case "INFO":
         const role=argv.includes("--replicaof")?"slave":"master"
-        const string=`role:${role}\r\nmaster_replid:${master_replid}\r\nmaster_repl_offset:0\r\n`
-          connection.write(`$${string.length}\r\n${string}\r\n`);
-          break;
+        bulkString(connection,[`role:${role}`,`master_replid:${master_replid}`,`master_repl_offset:0`].join("\r\n"));
+        break;
       case "REPLCONF":
-        if(arr[4]==="ACK") {ackRep++}
-        else{connection.write("+OK\r\n")}
+        if(arr[4]==="ACK") {ackRep++;pendingCommands--;}
+        else{simpleString(connection,"OK")}
         break;
       case "PSYNC":
-        connection.write(`+FULLRESYNC ${master_replid} 0\r\n`)
-        const base64="UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog==";
-        const bufferFrom64=Buffer.from(base64,'base64');
-        connection.write(`$${bufferFrom64.length}\r\n`)
-        connection.write(bufferFrom64)
+        simpleString(connection,`+FULLRESYNC ${master_replid} 0`);
+        base64RDB(connection,base64);
         propagatedCommands.push(connection)
         offset = 0;
         break;
       case "WAIT":
-          if(pendingCommands===0) connection.write(`:${propagatedCommands.length}\r\n`);
+          if(pendingCommands===0) integer(connection,propagatedCommands.length);
           const expectedAckReps=parseInt(arr[4]);
           let timeout=parseInt(arr[6]);
           const waitInterval=setInterval(()=>{
             console.log(ackRep,expectedAckReps)
             if(ackRep>=expectedAckReps||timeout<=0){
-              connection.write(`:${ackRep}\r\n`);
+              integer(connection,ackRep);
               clearInterval(waitInterval);
               ackRep=0
             }
             timeout-=100;
           },100)
           propagatedCommands.forEach(connection => {
-            connection.write(`*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n`);
+            arrays(connection,["REPLCONF","GETACK","*"]);
           });
         break;
+      case "CONFIG":
+        console.log(collection)
+        if(arr[6]==="dir"){arrays(connection,["dir",collection["dir"]])}
+        if(arr[6]==="dbfilename"){arrays(connection,["dbfilename",collection["dbfilename"]])}
+        break;
       default:
-        connection.write("-ERR unknown command\r\n");
-
-
+        unknownCommand(connection);
     }
   })
 });
-const handleHandshake= async(repSocket:net.Socket,expectedResponse:string,command:string)=>{
-  return new Promise<void>((resolve)=>{
-    repSocket.once("data",(data)=>{
-      if(data.toString().trim()===expectedResponse){
-        repSocket.write(command);
-        resolve();
-      }
-    })
-  })
-}
+
 
 if(argv.includes("--replicaof")){
-  const slavePort=argv[argv.indexOf("--port")+1];
-  const [masterHost,masterPortString]=argv[argv.indexOf("--replicaof")+1].split(" ");
-  const masterPort=parseInt(masterPortString);
-  const repSocket = net.connect({host: masterHost, port: masterPort},async () => {
-    repSocket.write("*1\r\n$4\r\nPING\r\n");
-    await handleHandshake(repSocket,"+PONG",`*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n${slavePort}\r\n`);
-    await handleHandshake(repSocket,"+OK",`*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n`);
-    await handleHandshake(repSocket,"+OK",`*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n`);
+  const slavePort=doubleDash(argv,"--port");
+  const [masterHost,masterPort]=doubleDash(argv,"--replicaof").split(" ");
+
+  const repSocket = net.connect({host: masterHost, port: parseInt(masterPort)},async () => {
+    arrays(repSocket,["PING"]);
+    await handleHandshake(repSocket,"+PONG",["REPLCONF","listening-port",slavePort])
+    await handleHandshake(repSocket,"+OK",["REPLCONF","capa","psync2"]);
+    await handleHandshake(repSocket,"+OK",["PSYNC","?","-1"]);
     repSocket.on("data",(data)=>{
       if (record) offset+=Buffer.byteLength(data);
-      const arr=data.toString().split("\r\n");
-      const commands=arr.slice(2);
+      const arr=parseBuffer(data);
+      const commands=arr.slice(2); //skip rdb file
       for(let i=0;i<commands.length;i++){
         if(commands[i]==="SET"){
           collection[commands[i+2]]=commands[i+4];
-          pendingCommands--;
+          
         }
         if(commands[i]==="GETACK"){
-          repSocket.write(`*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$${offset.toString().length}\r\n${offset}\r\n`)
+          arrays(repSocket,["REPLCONF","ACK",offset.toString()])
           record=true;
         }
       }
@@ -139,5 +130,11 @@ if(argv.includes("--replicaof")){
   });
 
 }
-//
+if(argv.includes("--dir")){
+  collection["dir"]=doubleDash(argv,"--dir");
+}
+if(argv.includes("--dbfilename")){
+  collection["dbfilename"]=doubleDash(argv,"--dbfilename");
+}
+
 server.listen(PORT, "127.0.0.1");
