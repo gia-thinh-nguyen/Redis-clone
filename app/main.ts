@@ -2,8 +2,8 @@ import exp from "constants";
 import { connect } from "http2";
 import * as net from "net";
 import {argv} from "node:process";
-import { simpleString,bulkString,arrays,nullBulkString,integer,parseBuffer,unknownCommand,handleHandshake,base64RDB,doubleDash} from "./helper";
-import {config} from "./types";
+import { simpleString,bulkString,arrays,nullBulkString,integer,parseBuffer,simpleError,handleHandshake,base64RDB,doubleDash} from "./helper";
+import {config,streamValue} from "./types";
 import {loadRDB} from "./rdbLoader";
 
 // You can use print statements as follows for debugging, they'll be visible when running tests.
@@ -29,7 +29,7 @@ let ackRep=0;
 let pendingCommands=0;
 const master_replid="8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb";
 const base64="UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog==";
-
+let lastStreamValue:streamValue;
 // Uncomment this block to pass the first stage
 const server: net.Server = net.createServer((connection: net.Socket) => {
   
@@ -113,7 +113,7 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
             arrays(connection,["dbfilename",configStore.dbfilename])
             break;
           default:
-            unknownCommand(connection);
+            simpleError(connection,"unknown command");
         }
         break;
       case "KEYS":
@@ -128,13 +128,23 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         }
         break;
       case "XADD":
-        const stream_key=key;
-        const stream_value=value;
-        redisStore[stream_key]={value:stream_value,type:"stream"};
-        bulkString(connection,value);
+        const [milliseconds, sequence] = value.split("-").map(Number);
+        console.log(lastStreamValue)
+        console.log(milliseconds,sequence)
+        
+        if (milliseconds<0||sequence<0||milliseconds+sequence<1){simpleError(connection,"The ID specified in XADD must be greater than 0-0");}
+        else if (lastStreamValue && (milliseconds<lastStreamValue.milliseconds ||sequence<=lastStreamValue.sequence )) {
+          simpleError(connection, "The ID specified in XADD is equal or smaller than the target stream top item");
+        } 
+        else {
+          lastStreamValue = { milliseconds, sequence };
+          redisStore[key] = { value: value, type: "stream" };
+          bulkString(connection, value);
+        }
+        
         break;
       default:
-        unknownCommand(connection);
+        simpleError(connection,"unknown command");
     }
   })
 });
