@@ -1,4 +1,5 @@
 import net from 'net';
+import { keyValueStore,streamValue } from './types';
 
 export const simpleString=(connection:net.Socket,str:string)=>connection.write(`+${str}\r\n`);
 export const bulkString=(connection:net.Socket,str:string)=>connection.write(`$${str.length}\r\n${str}\r\n`); 
@@ -31,4 +32,33 @@ export const doubleDash=(argv:string[],doubleDash:string):string=>{
 
 export const bytesToString=(arr:Uint8Array):string=>{
   return Array.from(arr).map((byte)=>String.fromCharCode(byte)).join('');
+}
+
+export const autoGenerateTimeSeq=(milliseconds:number,sequence:number,redisStore:keyValueStore):string=>{
+    milliseconds=Date.now();
+    sequence=0;
+    for(const key in redisStore){
+      if(redisStore[key].type==="stream"){
+        const [ms,seq]=redisStore[key].value.split("-").map(Number);
+        if(ms===milliseconds){
+          sequence=seq+1;
+        }
+      }
+    }
+    return `${milliseconds}-${sequence}`;
+}
+
+export const autoGenerateSeq=(milliseconds:number,sequence:number,lastStreamValue:streamValue):string=>{
+  if (lastStreamValue && milliseconds === lastStreamValue.milliseconds) {
+    sequence = lastStreamValue.sequence + 1;
+  } else {
+    sequence = milliseconds === 0 ? 1 : 0;
+  }
+  return `${milliseconds}-${sequence}`;
+}
+
+export const updateStream=(connection:net.Socket,key:string,value:string,redisStore:keyValueStore,lastStreamValue:streamValue,milliseconds:number,sequence:number)=>{
+    lastStreamValue = { milliseconds, sequence };
+    redisStore[key] = { value: value, type: "stream" };
+    bulkString(connection, value);
 }

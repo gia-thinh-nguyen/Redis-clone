@@ -2,7 +2,7 @@ import exp from "constants";
 import { connect } from "http2";
 import * as net from "net";
 import {argv} from "node:process";
-import { simpleString,bulkString,arrays,nullBulkString,integer,parseBuffer,simpleError,handleHandshake,base64RDB,doubleDash} from "./helper";
+import { simpleString,bulkString,arrays,nullBulkString,integer,parseBuffer,simpleError,handleHandshake,base64RDB,doubleDash,autoGenerateTimeSeq, autoGenerateSeq, updateStream} from "./helper";
 import {config,streamValue} from "./types";
 import {loadRDB} from "./rdbLoader";
 
@@ -129,17 +129,16 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         break;
       case "XADD":
         let [milliseconds, sequence] = value.split("-").map(Number);
+        if(isNaN(milliseconds)){
+          const newValue=autoGenerateTimeSeq(milliseconds,sequence,redisStore);
+          updateStream(connection,key,newValue,redisStore,lastStreamValue,milliseconds,sequence);
+          break;
+        }
+
         if(isNaN(sequence)){
           if(milliseconds<0) simpleError(connection,"The ID specified in XADD must be greater than 0-0");
-          if (lastStreamValue && milliseconds === lastStreamValue.milliseconds) {
-            sequence = lastStreamValue.sequence + 1;
-          } else {
-            sequence = milliseconds === 0 ? 1 : 0;
-          }
-          const newValue=`${milliseconds}-${sequence}`
-          lastStreamValue = { milliseconds, sequence };
-          redisStore[key] = { value: newValue, type: "stream" };
-          bulkString(connection, newValue);
+          const newValue=autoGenerateSeq(milliseconds,sequence,lastStreamValue);
+          updateStream(connection,key,newValue,redisStore,lastStreamValue,milliseconds,sequence);
           break;
         }
         if (milliseconds<0||sequence<0||milliseconds+sequence<1){simpleError(connection,"The ID specified in XADD must be greater than 0-0");}
@@ -147,9 +146,7 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
           simpleError(connection, "The ID specified in XADD is equal or smaller than the target stream top item");
         } 
         else {
-          lastStreamValue = { milliseconds, sequence };
-          redisStore[key] = { value: value, type: "stream" };
-          bulkString(connection, value);
+          updateStream(connection,key,value,redisStore,lastStreamValue,milliseconds,sequence);
         }
         
         break;
