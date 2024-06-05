@@ -43,7 +43,7 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
     const value = arr[6];
     const px = arr[8];
     const time=arr[10];
-    switch(method){
+    switch(method.toUpperCase()){
       case "PING":
           simpleString(connection,"PONG");
           break;
@@ -118,6 +118,14 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         break;
       case "KEYS":
         arrays(connection,Object.keys(redisStore));
+        break;
+      case "TYPE":
+        if(redisStore[key]){
+          simpleString(connection,"string");
+        }
+        else{
+          simpleString(connection,"none");
+        }
         break;
       default:
         unknownCommand(connection);
