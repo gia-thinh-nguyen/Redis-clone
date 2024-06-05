@@ -1,5 +1,4 @@
 import net from 'net';
-import { keyValueStore,streamValue } from './types';
 
 export const simpleString=(connection:net.Socket,str:string)=>connection.write(`+${str}\r\n`);
 export const bulkString=(connection:net.Socket,str:string)=>connection.write(`$${str.length}\r\n${str}\r\n`); 
@@ -10,22 +9,7 @@ export const simpleError=(connection:net.Socket,str:string)=>connection.write(`-
 
 export const parseBuffer=(data:Buffer):string[]=>{return data.toString().split("\r\n")}
 
-export const handleHandshake= async(repSocket:net.Socket,expectedResponse:string,command:string[])=>{
-    return new Promise<void>((resolve)=>{
-      repSocket.once("data",(data)=>{
-        if(data.toString().trim()===expectedResponse){
-          arrays(repSocket,command);
-          resolve();
-        }
-      })
-    })
-  }
 
-export const base64RDB=(connection:net.Socket,base64:string)=>{
-    const bufferFrom64=Buffer.from(base64,'base64');
-    connection.write(`$${bufferFrom64.length}\r\n`)
-    connection.write(bufferFrom64)
-}
 export const doubleDash=(argv:string[],doubleDash:string):string=>{
     return argv[argv.indexOf(doubleDash)+1];
 }
@@ -34,31 +18,3 @@ export const bytesToString=(arr:Uint8Array):string=>{
   return Array.from(arr).map((byte)=>String.fromCharCode(byte)).join('');
 }
 
-export const autoGenerateTimeSeq=(milliseconds:number,sequence:number,redisStore:keyValueStore):string=>{
-    milliseconds=Date.now();
-    sequence=0;
-    for(const key in redisStore){
-      if(redisStore[key].type==="stream"){
-        const [ms,seq]=redisStore[key].value.split("-").map(Number);
-        if(ms===milliseconds){
-          sequence=seq+1;
-        }
-      }
-    }
-    return `${milliseconds}-${sequence}`;
-}
-
-export const autoGenerateSeq=(milliseconds:number,sequence:number,lastStreamValue:streamValue):string=>{
-  if (lastStreamValue && milliseconds === lastStreamValue.milliseconds) {
-    sequence = lastStreamValue.sequence + 1;
-  } else {
-    sequence = milliseconds === 0 ? 1 : 0;
-  }
-  return `${milliseconds}-${sequence}`;
-}
-
-export const updateStream=(connection:net.Socket,key:string,value:string,redisStore:keyValueStore,lastStreamValue:streamValue,milliseconds:number,sequence:number)=>{
-    lastStreamValue = { milliseconds, sequence };
-    redisStore[key] = { value: value, type: "stream" };
-    bulkString(connection, value);
-}
