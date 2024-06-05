@@ -131,24 +131,17 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         let [milliseconds, sequence] = value.split("-").map(Number);
         if(isNaN(sequence)){
           if(milliseconds<0) simpleError(connection,"The ID specified in XADD must be greater than 0-0");
-          
-          //If there are no entries, the sequence number will be 0,but if the milliseconds is zero the sequence is 1,
-          //Adding another entry will increment the sequence number by 1, if the milliseconds is different from the lastStreamValue.milliseconds, 
-          //the sequence number will be reset to 0
           if (lastStreamValue && milliseconds === lastStreamValue.milliseconds) {
             sequence = lastStreamValue.sequence + 1;
           } else {
             sequence = milliseconds === 0 ? 1 : 0;
           }
-
-          
           const newValue=`${milliseconds}-${sequence}`
           lastStreamValue = { milliseconds, sequence };
           redisStore[key] = { value: newValue, type: "stream" };
           bulkString(connection, newValue);
           break;
         }
-        
         if (milliseconds<0||sequence<0||milliseconds+sequence<1){simpleError(connection,"The ID specified in XADD must be greater than 0-0");}
         else if (lastStreamValue && (milliseconds<lastStreamValue.milliseconds ||sequence<=lastStreamValue.sequence )) {
           simpleError(connection, "The ID specified in XADD is equal or smaller than the target stream top item");
@@ -158,7 +151,6 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
           redisStore[key] = { value: value, type: "stream" };
           bulkString(connection, value);
         }
-        
         
         break;
       default:
