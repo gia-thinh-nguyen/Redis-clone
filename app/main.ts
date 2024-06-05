@@ -121,11 +121,17 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         break;
       case "TYPE":
         if(redisStore[key]){
-          simpleString(connection,"string");
+          redisStore[key].type?simpleString(connection,redisStore[key].type!):simpleString(connection,"string");
         }
         else{
           simpleString(connection,"none");
         }
+        break;
+      case "XADD":
+        const stream_key=key;
+        const stream_value=value;
+        redisStore[stream_key]={value:stream_value,type:"stream"};
+        bulkString(connection,value);
         break;
       default:
         unknownCommand(connection);
