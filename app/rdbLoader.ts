@@ -32,7 +32,7 @@ constructor(path: string){
     }
 }
 parse(){
-    if(this.data?.length===0) return;
+    if(this.data===undefined) return;
     if(bytesToString(this.data.slice(0,5))!=="REDIS"){
     console.log(`Invalid RDB file: ${this.path}`);
     return;
@@ -88,6 +88,7 @@ parse(){
     }
 }
 readEntries() {
+    const now=new Date();
     while (this.index < this.data.length) {
     let type = this.data[this.index++];
     let expiration: Date | undefined;
@@ -95,22 +96,43 @@ readEntries() {
         this.index--;
         break;
     } else if (type === 0xFC) { // Expire time in milliseconds
-        expiration = new Date(this.readEncodedInt());
+        const milliseconds=this.readUnint64();
+        expiration = new Date(Number(milliseconds));
         type = this.data[this.index++];
     } else if (type === 0xFD) { // Expire time in seconds
-        expiration = new Date(this.readEncodedInt() * 1000);
+        const seconds=this.readUint32();
+        expiration = new Date(Number(seconds) * 1000);
         type = this.data[this.index++];
     }
     const key = this.readEncodedString();
     switch (type) {
-        case 0: // string encoding
-        this.entries[key] = { value: this.readEncodedString(), expiration };
+        case 0:  { // string encoding
+            const value = this.readEncodedString();
+            console.log(key, value, expiration);
+            if ((expiration ?? now) >= now) {
+              this.entries[key] = { value, expiration };
+            }
         break;
+        }
         default:
         throw Error("type not implemented: " + type);
     }
     }
 }
+readUint32():number{
+    return (this.data[this.index++]+(this.data[this.index++]<<8)+(this.data[this.index++]<<16)+(this.data[this.index++]<<24))
+}
+readUnint64():bigint{
+    let result = BigInt(0);
+    let shift = BigInt(0);
+    for(let i=0;i<8;i++){
+        result+=BigInt(this.data[this.index++])<<shift;
+        shift+=BigInt(8);
+    }
+    return result;
+}
+
+
 readEncodedInt(): number {
     let length = 0;
     const type = this.data[this.index] >> 6;
