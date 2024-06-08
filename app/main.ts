@@ -145,19 +145,12 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         else {
           lastStreamValue = updateStream(connection, key, redisStore, lastStreamValue, milliseconds, sequence,arr);
         }
-        
-        // for(const key in redisStore){
-        //   if(redisStore[key].type==="stream"){
-        //     console.log(redisStore[key].value)
-        //   }
-        // }
         break;
       case "XRANGE":
         let [millisecondsStart, sequenceStart] = arr[6].split("-").map(Number);
         let [millisecondsEnd, sequenceEnd] = arr[8].split("-").map(Number);
         const result=rangeStream(redisStore,millisecondsStart,sequenceStart,millisecondsEnd,sequenceEnd);
         connection.write(result);
-  
         break;
       default:
         simpleError(connection,"unknown command");
