@@ -1,9 +1,7 @@
-import exp from "constants";
-import { connect } from "http2";
 import * as net from "net";
 import {argv} from "node:process";
 import { simpleString,bulkString,arrays,nullBulkString,integer,parseBuffer,simpleError,doubleDash} from "./helper";
-import {handleHandshake,base64RDB,updateStream,autoGenerateTimeSeq,autoGenerateSeq} from "./function";
+import {handleHandshake,base64RDB,updateStream,autoGenerateTimeSeq,autoGenerateSeq, rangeStream} from "./function";
 import {config,streamValue} from "./types";
 import {loadRDB} from "./rdbLoader";
 
@@ -67,8 +65,8 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         
         break;
       case "GET":
-        if(redisStore[key]){
-          bulkString(connection,redisStore[key].value);
+        if(redisStore[key]&&typeof redisStore[key].value==="string"){
+          bulkString(connection,redisStore[key].value as string);
         }
         else{
           nullBulkString(connection);
@@ -93,7 +91,6 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
           const expectedAckReps=parseInt(arr[4]);
           let timeout=parseInt(arr[6]);
           const waitInterval=setInterval(()=>{
-            console.log(ackRep,expectedAckReps)
             if(ackRep>=expectedAckReps||timeout<=0){
               integer(connection,ackRep);
               clearInterval(waitInterval);
@@ -132,14 +129,13 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         let [milliseconds, sequence] = value.split("-").map(Number);
         if(isNaN(milliseconds)){
           [milliseconds, sequence] = autoGenerateTimeSeq(redisStore);
-          lastStreamValue = updateStream(connection, key, redisStore, lastStreamValue, milliseconds, sequence);
+          lastStreamValue = updateStream(connection, key, redisStore, lastStreamValue, milliseconds, sequence,arr);
           break;
         }
-
         if(isNaN(sequence)){
           if(milliseconds<0) simpleError(connection,"The ID specified in XADD must be greater than 0-0");
           sequence = autoGenerateSeq(milliseconds, lastStreamValue);
-          lastStreamValue = updateStream(connection, key, redisStore, lastStreamValue, milliseconds, sequence);
+          lastStreamValue = updateStream(connection, key, redisStore, lastStreamValue, milliseconds, sequence,arr);
           break;
         }
         if (milliseconds<0||sequence<0||milliseconds+sequence<1){simpleError(connection,"The ID specified in XADD must be greater than 0-0");}
@@ -147,9 +143,21 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
           simpleError(connection, "The ID specified in XADD is equal or smaller than the target stream top item");
         } 
         else {
-          lastStreamValue = updateStream(connection, key, redisStore, lastStreamValue, milliseconds, sequence);
+          lastStreamValue = updateStream(connection, key, redisStore, lastStreamValue, milliseconds, sequence,arr);
         }
         
+        // for(const key in redisStore){
+        //   if(redisStore[key].type==="stream"){
+        //     console.log(redisStore[key].value)
+        //   }
+        // }
+        break;
+      case "XRANGE":
+        let [millisecondsStart, sequenceStart] = arr[6].split("-").map(Number);
+        let [millisecondsEnd, sequenceEnd] = arr[8].split("-").map(Number);
+        const result=rangeStream(redisStore,millisecondsStart,sequenceStart,millisecondsEnd,sequenceEnd);
+        connection.write(result);
+  
         break;
       default:
         simpleError(connection,"unknown command");

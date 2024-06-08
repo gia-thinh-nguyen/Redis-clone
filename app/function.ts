@@ -21,9 +21,11 @@ export const autoGenerateTimeSeq=(redisStore:keyValueStore):[number,number]=>{
     let [milliseconds, sequence]=[Date.now(),0];
       for(const key in redisStore){
         if(redisStore[key].type==="stream"){
-          const [ms,seq]=redisStore[key].value.split("-").map(Number);
-          if(ms===milliseconds){
-            sequence=seq+1;
+          for(const stream of redisStore[key].value as { id: string; field: string[]; }[]){
+            const [ms,seq]=stream.id.split("-").map(Number);
+            if(ms===milliseconds){
+              sequence=seq+1;
+            }
           }
         }
       }
@@ -40,10 +42,39 @@ export const autoGenerateTimeSeq=(redisStore:keyValueStore):[number,number]=>{
     return sequence;
   }
   
-  export const updateStream=(connection:net.Socket,key:string,redisStore:keyValueStore,lastStreamValue:streamValue,milliseconds:number,sequence:number):streamValue=>{
-      const value = `${milliseconds}-${sequence}`;
+  export const updateStream=(connection:net.Socket,key:string,redisStore:keyValueStore,lastStreamValue:streamValue,milliseconds:number,sequence:number,arr:string[]):streamValue=>{
+      const id = `${milliseconds}-${sequence}`;
       lastStreamValue = { milliseconds, sequence };
-      redisStore[key] = { value:value, type: "stream" };
-      bulkString(connection, value);
+      const field=[]
+      for(let i=8;i<arr.length;i+=2){
+        field.push(arr[i]);
+      }
+      if (!redisStore[key]) {
+        redisStore[key] = { value: [], type: "stream" };
+      }
+      (redisStore[key].value as { id: string; field: string[]; }[]).push({ id, field });
+      
+      bulkString(connection, id);
       return lastStreamValue;
+  }
+
+  export const rangeStream=(redisStore:keyValueStore,millisecondsStart:number,sequenceStart:number,millisecondsEnd:number,sequenceEnd:number):string=>{
+    let range = [];
+    for (const key in redisStore) {
+      if (redisStore[key].type === "stream") {
+        for (const stream of redisStore[key].value as { id: string; field: string[]; }[]) {
+          const [ms, seq] = stream.id.split("-").map(Number);
+          if (ms > millisecondsStart || (ms === millisecondsStart && seq >= sequenceStart)) {
+            if (ms < millisecondsEnd || (ms === millisecondsEnd && seq <= sequenceEnd)) {
+              range.push(stream);
+            }
+          }
+        }
+      }
+    }
+    const rangeStrings = range.map(item => 
+      `*2\r\n$${item.id.length}\r\n${item.id}\r\n*${item.field.length}\r\n${item.field.map(str => `$${str.length}\r\n${str}`).join("\r\n")}`
+    );
+    const result= `*${range.length}\r\n${rangeStrings.join("\r\n")}\r\n`;
+    return result;
   }
