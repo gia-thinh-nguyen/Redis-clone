@@ -1,6 +1,6 @@
 import * as net from "net";
 import {argv} from "node:process";
-import { simpleString,bulkString,arrays,nullBulkString,integer,parseBuffer,simpleError,doubleDash} from "./helper";
+import { simpleString,bulkString,bulkArray,nullBulkString,integer,parseBuffer,simpleError,doubleDash} from "./helper";
 import {handleHandshake,base64RDB,updateStream,autoGenerateTimeSeq,autoGenerateSeq, rangeStream, rangeStreamPlus, readStream} from "./function";
 import {config,streamValue} from "./types";
 import {loadRDB} from "./rdbLoader";
@@ -62,7 +62,7 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         }
         pendingCommands++;
         propagatedCommands.forEach(connection => {
-          connection.write(arrays(["SET",key,value]));
+          connection.write(bulkArray(["SET",key,value]));
         });
         
         break;
@@ -101,23 +101,23 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
             timeout-=100;
           },100)
           propagatedCommands.forEach(connection => {
-            connection.write(arrays(["REPLCONF","GETACK","*"]));
+            connection.write(bulkArray(["REPLCONF","GETACK","*"]));
           });
         break;
       case "CONFIG":
         switch(arr[6]){
           case "dir":
-            connection.write(arrays(["dir",configStore.dir]));
+            connection.write(bulkArray(["dir",configStore.dir]));
             break;
           case "dbfilename":
-            connection.write(arrays(["dbfilename",configStore.dbfilename]));
+            connection.write(bulkArray(["dbfilename",configStore.dbfilename]));
             break;
           default:
             connection.write(simpleError("unknown command"));
         }
         break;
       case "KEYS":
-        connection.write(arrays(Object.keys(redisStore)));
+        connection.write(bulkArray(Object.keys(redisStore)));
         break;
       case "TYPE":
         if(redisStore[key]){
@@ -201,7 +201,7 @@ if(argv.includes("--replicaof")){
   const slavePort=doubleDash(argv,"--port");
   const [masterHost,masterPort]=doubleDash(argv,"--replicaof").split(" ");
   const repSocket = net.connect({host: masterHost, port: parseInt(masterPort)},async () => {
-    repSocket.write(arrays(["PING"]));
+    repSocket.write(bulkArray(["PING"]));
     await handleHandshake(repSocket,"+PONG",["REPLCONF","listening-port",slavePort])
     await handleHandshake(repSocket,"+OK",["REPLCONF","capa","psync2"]);
     await handleHandshake(repSocket,"+OK",["PSYNC","?","-1"]);
@@ -215,7 +215,7 @@ if(argv.includes("--replicaof")){
           
         }
         if(commands[i]==="GETACK"){
-          repSocket.write(arrays(["REPLCONF","ACK",offset.toString()]));
+          repSocket.write(bulkArray(["REPLCONF","ACK",offset.toString()]));
           record=true;
         }
       }

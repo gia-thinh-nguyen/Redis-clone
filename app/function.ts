@@ -1,11 +1,11 @@
 import net from 'net';
 import { keyValueStore,streamValue } from './types';
-import { bulkString, arrays,subArrays,joinedArrays,nullBulkString } from './helper';
+import { bulkString, bulkArray,subArray,joinedArray,nullBulkString } from './helper';
 export const handleHandshake= async(repSocket:net.Socket,expectedResponse:string,command:string[])=>{
     return new Promise<void>((resolve)=>{
       repSocket.once("data",(data)=>{
         if(data.toString().trim()===expectedResponse){
-          repSocket.write(arrays(command));
+          repSocket.write(bulkArray(command));
           resolve();
         }
       })
@@ -73,9 +73,9 @@ export const autoGenerateTimeSeq=(redisStore:keyValueStore):[number,number]=>{
       }
     }
     const rangeStrings = range.map(item => 
-      `*2\r\n${bulkString(item.id)}${subArrays(item.field)}`
+      `*2\r\n${bulkString(item.id)}${subArray(item.field)}`
     );
-    return joinedArrays(rangeStrings);
+    return joinedArray(rangeStrings);
   }
   export const rangeStreamPlus=(redisStore:keyValueStore,millisecondsStart:number,sequenceStart:number):string=>{
     let range = [];
@@ -90,9 +90,9 @@ export const autoGenerateTimeSeq=(redisStore:keyValueStore):[number,number]=>{
       }
     }
     const rangeStrings = range.map(item => 
-      `*2\r\n${bulkString(item.id)}${subArrays(item.field)}`
+      `*2\r\n${bulkString(item.id)}${subArray(item.field)}`
     );
-    return joinedArrays(rangeStrings);
+    return joinedArray(rangeStrings);
   }
 
   export const readStream=(redisStore:keyValueStore,readMap:Map<string,string>,lastStreamValue:streamValue):string=>{
@@ -105,10 +105,10 @@ export const autoGenerateTimeSeq=(redisStore:keyValueStore):[number,number]=>{
       for(const stream of redisStore[key]?.value as { id: string; field: string[]; }[]){
         const [msStream,seqStream]=stream.id.split("-").map(Number);
         if(msStream>msRead||(msStream===msRead&&seqStream>seqRead)){
-          readResult.push(`*2\r\n${bulkString(key)}*1\r\n*2\r\n${bulkString(stream.id)}${subArrays(stream.field)}`);
+          readResult.push(`*2\r\n${bulkString(key)}*1\r\n*2\r\n${bulkString(stream.id)}${subArray(stream.field)}`);
         }
       }
     } 
     if(readResult.length===0) return nullBulkString();
-    return joinedArrays(readResult);
+    return joinedArray(readResult);
   }
