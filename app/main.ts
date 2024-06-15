@@ -29,6 +29,8 @@ let pendingCommands=0;
 const master_replid="8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb";
 const base64="UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog==";
 let lastStreamValue:streamValue;
+let recordNewXADD=false;
+let newXADD=false;
 // Uncomment this block to pass the first stage
 const server: net.Server = net.createServer((connection: net.Socket) => {
   
@@ -145,6 +147,10 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         else {
           lastStreamValue = updateStream(connection, key, redisStore, lastStreamValue, milliseconds, sequence,arr);
         }
+        if(recordNewXADD){
+          newXADD=true;
+          recordNewXADD=false;
+        }
         break;
       case "XRANGE":
         let [millisecondsStart, sequenceStart] = arr[6].split("-").map(Number);
@@ -159,16 +165,32 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         break;
       case "XREAD":
         const readMap=new Map();
-        const startIndex=arr.indexOf("streams")+2; //start index of first read stream
+        const startIndex=arr.indexOf("streams")+2; //start index of first read
         const halfLength=(arr.length-startIndex)/2;
         for(let i=0;i<halfLength;i+=2){
           readMap.set(arr[startIndex+i],arr[startIndex+halfLength+i]);
         }
-        const blockTime=arr.includes("block")?parseInt(arr[6]):0;
-        setTimeout(()=>{
-          const readResult=readStream(redisStore,readMap);
+
+        function handleReadResult() {
+          const readResult = readStream(redisStore, readMap);
           connection.write(readResult);
-        },blockTime)
+        }
+        if (arr.includes("block")) {
+          const blockTime = parseInt(arr[6]);
+          if (blockTime === 0) {
+            const interval = setInterval(() => {
+              if (newXADD) {
+                clearInterval(interval);
+                newXADD = false;
+                handleReadResult();
+              }
+            }, 100);
+          } else {
+            setTimeout(handleReadResult, blockTime);
+          }
+        } else {
+          handleReadResult();
+        }
         break;
       default:
         simpleError(connection,"unknown command");
