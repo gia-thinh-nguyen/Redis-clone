@@ -170,27 +170,24 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         for(let i=0;i<halfLength;i+=2){
           readMap.set(arr[startIndex+i],arr[startIndex+halfLength+i]);
         }
-
-        function handleReadResult() {
-          const readResult = readStream(redisStore, readMap);
-          connection.write(readResult);
-        }
-        if (arr.includes("block")) {
-          const blockTime = parseInt(arr[6]);
-          if (blockTime === 0) {
-            const interval = setInterval(() => {
-              if (newXADD) {
+        const handleReadResult=()=>{const readResult=readStream(redisStore,readMap);connection.write(readResult);}
+        if(arr.includes("block")){
+          const blockTime=parseInt(arr[6]);
+          if(blockTime==0){
+            recordNewXADD=true;
+            const interval=setInterval(()=>{
+              if(newXADD){
                 clearInterval(interval);
-                newXADD = false;
+                newXADD=false;
                 handleReadResult();
               }
-            }, 100);
-          } else {
-            setTimeout(handleReadResult, blockTime);
+            },100)
+            break;
           }
-        } else {
-          handleReadResult();
+          setTimeout(handleReadResult, blockTime);
+          break;
         }
+        handleReadResult();
         break;
       default:
         simpleError(connection,"unknown command");
