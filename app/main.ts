@@ -1,7 +1,7 @@
 import * as net from "net";
 import {argv} from "node:process";
 import { simpleString,bulkString,arrays,nullBulkString,integer,parseBuffer,simpleError,doubleDash} from "./helper";
-import {handleHandshake,base64RDB,updateStream,autoGenerateTimeSeq,autoGenerateSeq, rangeStream, rangeStreamPlus} from "./function";
+import {handleHandshake,base64RDB,updateStream,autoGenerateTimeSeq,autoGenerateSeq, rangeStream, rangeStreamPlus, readStream} from "./function";
 import {config,streamValue} from "./types";
 import {loadRDB} from "./rdbLoader";
 
@@ -150,12 +150,21 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         let [millisecondsStart, sequenceStart] = arr[6].split("-").map(Number);
         let [millisecondsEnd, sequenceEnd] = arr[8].split("-").map(Number);
         if(arr[8]==="+"){
-          const result=rangeStreamPlus(redisStore,millisecondsStart,sequenceStart);connection.write(result);
+          const result=rangeStreamPlus(redisStore,millisecondsStart,sequenceStart);
           connection.write(result);
           break;
         }
         const result=rangeStream(redisStore,millisecondsStart,sequenceStart,millisecondsEnd,sequenceEnd);
         connection.write(result);
+        break;
+      case "XREAD":
+        const readMap=new Map();
+        const readLength=(arr.length-6)/4;//number of keys and entry ids.
+        for(let i=0;i<readLength;i++){
+          readMap.set(arr[6+i*2],arr[6+(readLength+i)*2]);
+        }
+        const readResult=readStream(redisStore,readMap);
+        connection.write(readResult);
         break;
       default:
         simpleError(connection,"unknown command");
@@ -191,7 +200,5 @@ if(argv.includes("--replicaof")){
   });
 
 }
-
-
 
 server.listen(PORT, "127.0.0.1");
