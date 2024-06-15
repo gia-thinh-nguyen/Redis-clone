@@ -104,7 +104,7 @@ export const autoGenerateTimeSeq=(redisStore:keyValueStore):[number,number]=>{
       for(const stream of redisStore[key].value as { id: string; field: string[]; }[]){
         const [msStream,seqStream]=stream.id.split("-").map(Number);
         if(msStream>msRead||(msStream===msRead&&seqStream>seqRead)){
-          readResult.push(`*2\r\n$${key.length}\r\n${key}\r\n*1\r\n*2\r\n$${stream.id.length}\r\n${stream.id}\r\n*${stream.field.length}\r\n${stream.field.map(str => `$${str.length}\r\n${str}`).join("\r\n")} `)
+          readResult.push(`*2\r\n$${key.length}\r\n${key}\r\n*1\r\n*2\r\n$${stream.id.length}\r\n${stream.id}\r\n*${stream.field.length}\r\n${stream.field.map(str =>`$${str.length}\r\n${str}`).join("\r\n")}`)
         }
       }
     } 
