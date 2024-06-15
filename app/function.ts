@@ -60,6 +60,7 @@ export const autoGenerateTimeSeq=(redisStore:keyValueStore):[number,number]=>{
 
   export const rangeStream=(redisStore:keyValueStore,millisecondsStart:number,sequenceStart:number,millisecondsEnd:number,sequenceEnd:number):string=>{
     let range = [];
+    console.log(millisecondsStart,sequenceStart)
     for (const key in redisStore) {
       if (redisStore[key].type === "stream") {
         for (const stream of redisStore[key].value as { id: string; field: string[]; }[]) {
