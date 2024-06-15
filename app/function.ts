@@ -1,11 +1,11 @@
 import net from 'net';
 import { keyValueStore,streamValue } from './types';
-import { bulkString, arrays } from './helper';
+import { bulkString, arrays,subArrays,joinedArrays,nullBulkString } from './helper';
 export const handleHandshake= async(repSocket:net.Socket,expectedResponse:string,command:string[])=>{
     return new Promise<void>((resolve)=>{
       repSocket.once("data",(data)=>{
         if(data.toString().trim()===expectedResponse){
-          arrays(repSocket,command);
+          repSocket.write(arrays(command));
           resolve();
         }
       })
@@ -54,7 +54,7 @@ export const autoGenerateTimeSeq=(redisStore:keyValueStore):[number,number]=>{
       }
       (redisStore[key].value as { id: string; field: string[]; }[]).push({ id, field });
       
-      bulkString(connection, id);
+      connection.write(bulkString(id));
       return lastStreamValue;
   }
 
@@ -73,10 +73,9 @@ export const autoGenerateTimeSeq=(redisStore:keyValueStore):[number,number]=>{
       }
     }
     const rangeStrings = range.map(item => 
-      `*2\r\n$${item.id.length}\r\n${item.id}\r\n*${item.field.length}\r\n${item.field.map(str => `$${str.length}\r\n${str}`).join("\r\n")}`
+      `*2\r\n${bulkString(item.id)}${subArrays(item.field)}`
     );
-    const result= `*${range.length}\r\n${rangeStrings.join("\r\n")}\r\n`;
-    return result;
+    return joinedArrays(rangeStrings);
   }
   export const rangeStreamPlus=(redisStore:keyValueStore,millisecondsStart:number,sequenceStart:number):string=>{
     let range = [];
@@ -91,25 +90,25 @@ export const autoGenerateTimeSeq=(redisStore:keyValueStore):[number,number]=>{
       }
     }
     const rangeStrings = range.map(item => 
-      `*2\r\n$${item.id.length}\r\n${item.id}\r\n*${item.field.length}\r\n${item.field.map(str => `$${str.length}\r\n${str}`).join("\r\n")}`
+      `*2\r\n${bulkString(item.id)}${subArrays(item.field)}`
     );
-    const result= `*${range.length}\r\n${rangeStrings.join("\r\n")}\r\n`;
-    return result;
+    return joinedArrays(rangeStrings);
   }
 
-  export const readStream=(redisStore:keyValueStore,readMap:Map<string,string>):string=>{
+  export const readStream=(redisStore:keyValueStore,readMap:Map<string,string>,lastStreamValue:streamValue):string=>{
     let readResult=[];
-    console.log(readMap)
+    let msRead: number, seqRead: number;
     for(const key of readMap.keys()){
-      const [msRead,seqRead]=readMap.get(key)!.split("-").map(Number);
+      const value=readMap.get(key);
+      if(value==="$"){[msRead,seqRead]=[lastStreamValue.milliseconds, lastStreamValue.sequence];}
+      else { [msRead,seqRead]=value!.split("-").map(Number);}
       for(const stream of redisStore[key]?.value as { id: string; field: string[]; }[]){
         const [msStream,seqStream]=stream.id.split("-").map(Number);
         if(msStream>msRead||(msStream===msRead&&seqStream>seqRead)){
-          readResult.push(`*2\r\n$${key.length}\r\n${key}\r\n*1\r\n*2\r\n$${stream.id.length}\r\n${stream.id}\r\n*${stream.field.length}\r\n${stream.field.map(str =>`$${str.length}\r\n${str}`).join("\r\n")}`)
+          readResult.push(`*2\r\n${bulkString(key)}*1\r\n*2\r\n${bulkString(stream.id)}${subArrays(stream.field)}`);
         }
       }
     } 
-    if(readResult.length===0) return "$-1\r\n";
-    const result= `*${readResult.length}\r\n${readResult.join("\r\n")}\r\n`;
-    return result;
+    if(readResult.length===0) return nullBulkString();
+    return joinedArrays(readResult);
   }

@@ -46,13 +46,13 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
     const time=arr[10];
     switch(method.toUpperCase()){
       case "PING":
-          simpleString(connection,"PONG");
+          connection.write(simpleString("PONG"));
           break;
       case "ECHO":
-        bulkString(connection,key);
+        connection.write(bulkString(key));
         break;
       case "SET":
-        simpleString(connection,"OK");
+        connection.write(simpleString("OK"));
         redisStore[key]={value:value};
         if(px&&px.toLowerCase()==="px"){
           expire_time=parseInt(time);
@@ -62,69 +62,69 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         }
         pendingCommands++;
         propagatedCommands.forEach(connection => {
-          arrays(connection,["SET",key,value]);
+          connection.write(arrays(["SET",key,value]));
         });
         
         break;
       case "GET":
         if(redisStore[key]&&typeof redisStore[key].value==="string"){
-          bulkString(connection,redisStore[key].value as string);
+          connection.write(bulkString(redisStore[key].value as string));
         }
         else{
-          nullBulkString(connection);
+          connection.write(nullBulkString());
         }
         break;
       case "INFO":
         const role=argv.includes("--replicaof")?"slave":"master"
-        bulkString(connection,[`role:${role}`,`master_replid:${master_replid}`,`master_repl_offset:0`].join("\r\n"));
+        connection.write(bulkString([`role:${role}`,`master_replid:${master_replid}`,`master_repl_offset:0`].join("\r\n")));
         break;
       case "REPLCONF":
         if(arr[4]==="ACK") {ackRep++;pendingCommands--;}
-        else{simpleString(connection,"OK")}
+        else{connection.write(simpleString("OK"));}
         break;
       case "PSYNC":
-        simpleString(connection,`+FULLRESYNC ${master_replid} 0`);
+        connection.write(simpleString(`+FULLRESYNC ${master_replid} 0`));
         base64RDB(connection,base64);
         propagatedCommands.push(connection)
         offset = 0;
         break;
       case "WAIT":
-          if(pendingCommands===0) integer(connection,propagatedCommands.length);
+          if(pendingCommands===0) connection.write(integer(propagatedCommands.length));
           const expectedAckReps=parseInt(arr[4]);
           let timeout=parseInt(arr[6]);
           const waitInterval=setInterval(()=>{
             if(ackRep>=expectedAckReps||timeout<=0){
-              integer(connection,ackRep);
+              connection.write(integer(ackRep));
               clearInterval(waitInterval);
               ackRep=0
             }
             timeout-=100;
           },100)
           propagatedCommands.forEach(connection => {
-            arrays(connection,["REPLCONF","GETACK","*"]);
+            connection.write(arrays(["REPLCONF","GETACK","*"]));
           });
         break;
       case "CONFIG":
         switch(arr[6]){
           case "dir":
-            arrays(connection,["dir",configStore.dir])
+            connection.write(arrays(["dir",configStore.dir]));
             break;
           case "dbfilename":
-            arrays(connection,["dbfilename",configStore.dbfilename])
+            connection.write(arrays(["dbfilename",configStore.dbfilename]));
             break;
           default:
-            simpleError(connection,"unknown command");
+            connection.write(simpleError("unknown command"));
         }
         break;
       case "KEYS":
-        arrays(connection,Object.keys(redisStore));
+        connection.write(arrays(Object.keys(redisStore)));
         break;
       case "TYPE":
         if(redisStore[key]){
-          redisStore[key].type?simpleString(connection,redisStore[key].type!):simpleString(connection,"string");
+          redisStore[key].type?connection.write(simpleString(redisStore[key].type!)):connection.write(simpleString("string"));
         }
         else{
-          simpleString(connection,"none");
+          connection.write(simpleString("none"));
         }
         break;
       case "XADD":
@@ -135,14 +135,14 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
           break;
         }
         if(isNaN(sequence)){
-          if(milliseconds<0) simpleError(connection,"The ID specified in XADD must be greater than 0-0");
+          if(milliseconds<0) connection.write(simpleError("The ID specified in XADD must be greater than 0-0"));
           sequence = autoGenerateSeq(milliseconds, lastStreamValue);
           lastStreamValue = updateStream(connection, key, redisStore, lastStreamValue, milliseconds, sequence,arr);
           break;
         }
-        if (milliseconds<0||sequence<0||milliseconds+sequence<1){simpleError(connection,"The ID specified in XADD must be greater than 0-0");}
+        if (milliseconds<0||sequence<0||milliseconds+sequence<1){connection.write(simpleError("The ID specified in XADD must be greater than 0-0"));}
         else if (lastStreamValue && (milliseconds<lastStreamValue.milliseconds ||sequence<=lastStreamValue.sequence )) {
-          simpleError(connection, "The ID specified in XADD is equal or smaller than the target stream top item");
+          connection.write(simpleError("The ID specified in XADD is equal or smaller than the target stream top item"));
         } 
         else {
           lastStreamValue = updateStream(connection, key, redisStore, lastStreamValue, milliseconds, sequence,arr);
@@ -170,7 +170,8 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         for(let i=0;i<halfLength;i+=2){
           readMap.set(arr[startIndex+i],arr[startIndex+halfLength+i]);
         }
-        const handleReadResult=()=>{const readResult=readStream(redisStore,readMap);connection.write(readResult);}
+        const clonedLastStreamValue=lastStreamValue;
+        const handleReadResult=()=>{const readResult=readStream(redisStore,readMap,clonedLastStreamValue);connection.write(readResult);}
         if(arr.includes("block")){
           const blockTime=parseInt(arr[6]);
           if(blockTime==0){
@@ -190,7 +191,7 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         handleReadResult();
         break;
       default:
-        simpleError(connection,"unknown command");
+        connection.write(simpleError("unknown command"));
     }
   })
 });
@@ -200,7 +201,7 @@ if(argv.includes("--replicaof")){
   const slavePort=doubleDash(argv,"--port");
   const [masterHost,masterPort]=doubleDash(argv,"--replicaof").split(" ");
   const repSocket = net.connect({host: masterHost, port: parseInt(masterPort)},async () => {
-    arrays(repSocket,["PING"]);
+    repSocket.write(arrays(["PING"]));
     await handleHandshake(repSocket,"+PONG",["REPLCONF","listening-port",slavePort])
     await handleHandshake(repSocket,"+OK",["REPLCONF","capa","psync2"]);
     await handleHandshake(repSocket,"+OK",["PSYNC","?","-1"]);
@@ -214,7 +215,7 @@ if(argv.includes("--replicaof")){
           
         }
         if(commands[i]==="GETACK"){
-          arrays(repSocket,["REPLCONF","ACK",offset.toString()])
+          repSocket.write(arrays(["REPLCONF","ACK",offset.toString()]));
           record=true;
         }
       }
