@@ -1,7 +1,7 @@
 import * as net from "net";
 import {argv} from "node:process";
 import { simpleString,bulkString,arrays,nullBulkString,integer,parseBuffer,simpleError,doubleDash} from "./helper";
-import {handleHandshake,base64RDB,updateStream,autoGenerateTimeSeq,autoGenerateSeq, rangeStream} from "./function";
+import {handleHandshake,base64RDB,updateStream,autoGenerateTimeSeq,autoGenerateSeq, rangeStream, rangeStreamPlus} from "./function";
 import {config,streamValue} from "./types";
 import {loadRDB} from "./rdbLoader";
 
@@ -149,6 +149,11 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
       case "XRANGE":
         let [millisecondsStart, sequenceStart] = arr[6].split("-").map(Number);
         let [millisecondsEnd, sequenceEnd] = arr[8].split("-").map(Number);
+        if(arr[8]==="+"){
+          const result=rangeStreamPlus(redisStore,millisecondsStart,sequenceStart);connection.write(result);
+          connection.write(result);
+          break;
+        }
         const result=rangeStream(redisStore,millisecondsStart,sequenceStart,millisecondsEnd,sequenceEnd);
         connection.write(result);
         break;
