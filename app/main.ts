@@ -159,12 +159,16 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
         break;
       case "XREAD":
         const readMap=new Map();
-        const readLength=(arr.length-6)/4;//number of keys and entry ids.
-        for(let i=0;i<readLength;i++){
-          readMap.set(arr[6+i*2],arr[6+(readLength+i)*2]);
+        const startIndex=arr.indexOf("streams")+2; //start index of first read stream
+        const halfLength=(arr.length-startIndex)/2;
+        for(let i=0;i<halfLength;i+=2){
+          readMap.set(arr[startIndex+i],arr[startIndex+halfLength+i]);
         }
-        const readResult=readStream(redisStore,readMap);
-        connection.write(readResult);
+        const blockTime=arr.includes("block")?parseInt(arr[6]):0;
+        setTimeout(()=>{
+          const readResult=readStream(redisStore,readMap);
+          connection.write(readResult);
+        },blockTime)
         break;
       default:
         simpleError(connection,"unknown command");
@@ -176,7 +180,6 @@ const server: net.Server = net.createServer((connection: net.Socket) => {
 if(argv.includes("--replicaof")){
   const slavePort=doubleDash(argv,"--port");
   const [masterHost,masterPort]=doubleDash(argv,"--replicaof").split(" ");
-
   const repSocket = net.connect({host: masterHost, port: parseInt(masterPort)},async () => {
     arrays(repSocket,["PING"]);
     await handleHandshake(repSocket,"+PONG",["REPLCONF","listening-port",slavePort])
